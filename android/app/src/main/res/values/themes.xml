@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.ZCodeShell" parent="Theme.Material3.DayNight.NoActionBar">
+        <!-- 透明状态栏：刘海区域由窗口背景（跟随深浅模式）填充 -->
+        <item name="android:statusBarColor">@android:color/transparent</item>
+    </style>
+</resources>
+

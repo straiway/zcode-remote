@@ -1,0 +1,4 @@
+.DS_Store
+dist/
+# 本地工具的工作目录，不入库
+.mimosa/

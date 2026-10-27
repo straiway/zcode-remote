@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">ZCode Remote</string>
+    <string name="empty_title">连接 ZCode</string>
+    <string name="empty_hint">在电脑端 ZCode 点击左下角的手机图标生成连接二维码，然后用本应用扫码。链接内含授权令牌，等同临时密钥，请勿转发给他人。</string>
+    <string name="action_scan">扫码连接</string>
+    <string name="action_paste">粘贴链接连接</string>
+    <string name="action_last_with_url">使用上次连接（%1$s）</string>
+    <string name="scan_prompt">对准 ZCode 桌面端弹出的连接二维码</string>
+    <string name="paste_empty">剪贴板里没有可用的链接</string>
+    <string name="invalid_link">内容不是有效的 http(s) 链接，请重新扫码或复制</string>
+    <string name="error_generic">页面加载失败</string>
+    <string name="error_timeout">连接超时</string>
+    <string name="error_http">服务器返回了错误状态码 %1$d</string>
+    <string name="error_hint_desktop">请确认电脑端 ZCode 正在运行、远程控制已开启；若桌面端刷新过二维码，旧链接会立即失效，需要重新扫码。</string>
+    <string name="error_hint_offline">手机当前没有可用网络，请检查 Wi-Fi 或流量后重试。</string>
+    <string name="btn_retry">重试</string>
+    <string name="btn_rescan">重新扫码</string>
+    <string name="no_browser">手机上没有可打开此链接的应用</string>
+    <string name="btn_saved">已保存的连接</string>
+    <string name="action_reload">重新加载页面</string>
+    <string name="reloading">正在重新加载…</string>
+    <string name="switcher_desc">切换连接</string>
+    <string name="connections_title">已保存的连接</string>
+    <string name="connection_current">（当前）</string>
+    <string name="action_rename">重命名</string>
+    <string name="action_delete">删除</string>
+    <string name="channel_msg">新消息</string>
+    <string name="channel_wait">等待确认</string>
+    <string name="notif_msg_title">ZCode 有新消息</string>
+    <string name="notif_done_title">ZCode 任务已完成</string>
+    <string name="notif_wait_title">ZCode 等待你的确认</string>
+    <string name="notif_fallback">点击返回会话</string>
+</resources>

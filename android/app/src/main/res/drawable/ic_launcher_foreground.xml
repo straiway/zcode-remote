@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- 白色 Z 字，落在自适应图标中央安全区内 -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M34,38 L74,38 L74,46.5 L48.5,61.5 L74,61.5 L74,70 L34,70 L34,61.5 L59.5,46.5 L34,46.5 Z" />
+</vector>
