@@ -4,7 +4,7 @@
 # 产物统一输出到 build/bin/
 set -e
 cd "$(dirname "$0")"
-VERSION="1.0.0"
+VERSION="1.0.1"
 APP_NAME="ZCode Remote"
 
 mkdir -p build/bin
@@ -30,7 +30,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
     <key>CFBundleName</key><string>${APP_NAME}</string>
     <key>CFBundleDisplayName</key><string>${APP_NAME}</string>
     <key>CFBundleShortVersionString</key><string>${VERSION}</string>
-    <key>CFBundleVersion</key><string>9</string>
+    <key>CFBundleVersion</key><string>10</string>
     <key>CFBundlePackageType</key><string>APPL</string>
     <key>CFBundleIconFile</key><string>AppIcon</string>
     <key>LSMinimumSystemVersion</key><string>13.0</string>
