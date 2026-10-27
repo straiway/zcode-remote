@@ -36,18 +36,20 @@ td.rounded_rectangle(
     [MARGIN, MARGIN, MARGIN + SQUARE - 1, MARGIN + SQUARE - 1],
     radius=RADIUS, fill=(26, 28, 34, 255))
 
-# 白色 Z（与安卓 ic_launcher_foreground 同一形状），整体略上移给角标留位
-zw, zh = int(SQUARE * 0.58), int(SQUARE * 0.464)
-zx0, zy0 = (S - zw) / 2, MARGIN + int(SQUARE * 0.14)
+# 白色 Z（与安卓 ic_launcher_foreground 同一形状），在整块图标内上下左右居中
+zw, zh = int(SQUARE * 0.55), int(SQUARE * 0.44)
+zx0, zy0 = (S - zw) / 2, (S - zh) / 2
 sx, sy = zw / 40, zh / 32
 pts = [(34, 38), (74, 38), (74, 46.5), (48.5, 61.5), (74, 61.5),
        (74, 70), (34, 70), (34, 61.5), (59.5, 46.5), (34, 46.5)]
 poly = [(zx0 + (px - 34) * sx, zy0 + (py - 38) * sy) for px, py in pts]
 td.polygon(poly, fill=(255, 255, 255, 255))
 
-# 右下角屏幕射线角标：小显示器 + 信号波纹，遥控的隐喻
-badge_center = (MARGIN + SQUARE * 0.72, MARGIN + SQUARE * 0.74)
-badge_r = SQUARE * 0.17  # 角标整体半径
+# 右下角屏幕射线角标：小显示器 + 信号波纹，遥控的隐喻。
+# 角标缩小后收进底板右下角圆角内，与居中的 Z 保持间距、不遮挡。
+badge_inset = 130  # 角标圆心距底板右/下边缘的距离
+badge_center = (MARGIN + SQUARE - badge_inset, MARGIN + SQUARE - badge_inset)
+badge_r = SQUARE * 0.113  # 角标整体半径
 # 白色衬底圆（把角标和底色区分开）
 td.ellipse(
     [badge_center[0] - badge_r, badge_center[1] - badge_r,

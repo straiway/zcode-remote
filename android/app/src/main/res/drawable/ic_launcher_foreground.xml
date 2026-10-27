@@ -4,8 +4,48 @@
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
-    <!-- 白色 Z 字，落在自适应图标中央安全区内 -->
+    <!-- 白色 Z 字，与 macOS 图标同形，落在自适应图标中央安全区内；
+         缩到可见区(72dp 圆形遮罩)的 50%，给右下角角标让出间距 -->
     <path
         android:fillColor="#FFFFFF"
-        android:pathData="M34,38 L74,38 L74,46.5 L48.5,61.5 L74,61.5 L74,70 L34,70 L34,61.5 L59.5,46.5 L34,46.5 Z" />
+        android:pathData="M36,39.6 L72,39.6 L72,47.25 L49.05,60.75 L72,60.75 L72,68.4 L36,68.4 L36,60.75 L58.95,47.25 L36,47.25 Z" />
+
+    <!-- 右下角屏幕射线角标：小显示器 + 信号波纹，遥控的隐喻。
+         圆心(75,75) 半径5.5，整体在最保守的 72dp 圆形遮罩内(距边缘0.8dp)，
+         与 Z 最近角点(72,68.4) 间距 1.75dp，不遮挡 Z -->
+    <!-- 白色衬底圆 -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M69.5,75 A5.5,5.5 0 1 1 80.5,75 A5.5,5.5 0 1 1 69.5,75 Z" />
+    <!-- 显示器主体（深色，与图标底色一致），带圆角 -->
+    <path
+        android:fillColor="#1A1C22"
+        android:pathData="M72.97,72.3 L77.03,72.3 A0.77,0.77 0 0 1 77.8,73.07 L77.8,75.6 A0.77,0.77 0 0 1 77.03,76.37 L72.97,76.37 A0.77,0.77 0 0 1 72.2,75.6 L72.2,73.07 A0.77,0.77 0 0 1 72.97,72.3 Z" />
+    <!-- 显示器支架 -->
+    <path
+        android:fillColor="#1A1C22"
+        android:pathData="M74.56,76.37 L75.44,76.37 L75.44,77.25 L74.56,77.25 Z" />
+    <!-- 底座 -->
+    <path
+        android:fillColor="#1A1C22"
+        android:pathData="M73.63,77.25 L76.37,77.25 A0.28,0.28 0 0 1 76.65,77.53 L76.65,77.63 A0.28,0.28 0 0 1 76.37,77.91 L73.63,77.91 A0.28,0.28 0 0 1 73.35,77.63 L73.35,77.53 A0.28,0.28 0 0 1 73.63,77.25 Z" />
+    <!-- 屏幕上的信号波纹：三段同心弧 -->
+    <path
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="0.39"
+        android:pathData="M73.79,74.92 A0.55,0.55 0 0 1 74.34,75.47" />
+    <path
+        android:strokeColor="#FFFFFF"
+        android:strokeAlpha="0.78"
+        android:strokeWidth="0.39"
+        android:pathData="M73.79,74.43 A1.05,1.05 0 0 1 74.84,75.47" />
+    <path
+        android:strokeColor="#FFFFFF"
+        android:strokeAlpha="0.57"
+        android:strokeWidth="0.39"
+        android:pathData="M73.79,73.93 A1.54,1.54 0 0 1 75.33,75.47" />
+    <!-- 信号原点 -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M73.49,75.47 A0.3,0.3 0 1 1 74.09,75.47 A0.3,0.3 0 1 1 73.49,75.47 Z" />
 </vector>
