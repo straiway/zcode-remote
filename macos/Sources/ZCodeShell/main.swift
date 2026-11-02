@@ -168,7 +168,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
             contentRect: NSRect(x: 0, y: 0, width: 1100, height: 760),
             styleMask: [.titled, .closable, .miniaturizable, .resizable],
             backing: .buffered, defer: false)
-        window.title = "ZCode Remote"
+        window.title = "ZCRemote"
         window.contentView = web
         window.center()
         window.makeKeyAndOrderFront(nil)
@@ -184,9 +184,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
         let appItem = NSMenuItem()
         mainMenu.addItem(appItem)
         let appMenu = NSMenu()
-        appMenu.addItem(NSMenuItem(title: "关于 ZCode Remote", action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)), keyEquivalent: ""))
+        appMenu.addItem(NSMenuItem(title: "关于 ZCRemote", action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)), keyEquivalent: ""))
         appMenu.addItem(.separator())
-        appMenu.addItem(NSMenuItem(title: "退出 ZCode Remote", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
+        appMenu.addItem(NSMenuItem(title: "退出 ZCRemote", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
         appItem.submenu = appMenu
 
         let connItem = NSMenuItem()
@@ -262,7 +262,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
         guard let url = pendingUrl else { return }
         ConnectionStore.remove(url: url)
         pendingUrl = nil
-        window?.title = "ZCode Remote"
+        window?.title = "ZCRemote"
         webView?.load(URLRequest(url: URL(string: "about:blank")!))
         if ConnectionStore.list().isEmpty {
             addConnection(true)
@@ -296,7 +296,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
         }
         pendingUrl = url
         let conns = ConnectionStore.upsert(url: url)
-        window?.title = conns.first { $0.url == url }?.name ?? "ZCode Remote"
+        window?.title = conns.first { $0.url == url }?.name ?? "ZCRemote"
         requestNotificationPermissionIfNeeded()
         if let u = URL(string: url) {
             webView?.load(URLRequest(url: u))
@@ -425,7 +425,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
 
     func downloadDidFinish(_ download: WKDownload) {
         if let url = download.originalRequest?.url {
-            NSLog("ZCode Remote: downloaded \(url.absoluteString)")
+            NSLog("ZCRemote: downloaded \(url.absoluteString)")
         }
     }
 

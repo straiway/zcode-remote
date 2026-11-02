@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">ZCode Remote</string>
+    <string name="app_name">ZCRemote</string>
     <string name="empty_title">连接 ZCode</string>
     <string name="empty_hint">在电脑端 ZCode 点击左下角的手机图标生成连接二维码，然后用本应用扫码。链接内含授权令牌，等同临时密钥，请勿转发给他人。</string>
     <string name="action_scan">扫码连接</string>

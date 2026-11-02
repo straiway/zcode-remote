@@ -1,4 +1,4 @@
-# ZCode Remote
+# ZCRemote
 
 **Unofficial ZCode remote-control client for Android and macOS** — follow and steer the [ZCode](https://zcode.z.ai) tasks running on your computer from your phone, or from another computer.
 
@@ -10,7 +10,7 @@
 
 The ZCode desktop app ships a "remote control" feature: click the phone icon in the bottom-left corner, scan the QR code (or open the link) in your phone's browser, and you can watch tasks and send instructions remotely. It works, but a browser tab has obvious gaps: no notifications, re-scanning every time, and clumsy switching between several computers.
 
-ZCode Remote wraps that page in a native client and fills those gaps:
+ZCRemote wraps that page in a native client and fills those gaps:
 
 | Capability | Details |
 |---|---|
@@ -36,10 +36,10 @@ The APK is self-signed by the developer (not distributed through an app store). 
 
 ### macOS
 
-1. Download `ZCode-Remote-macOS-x.y.z.zip` and unzip it
-2. Drag `ZCode Remote.app` into **Applications** (the name does not clash with the official ZCode.app, so both can coexist)
+1. Download `ZCRemote-macOS-x.y.z.zip` and unzip it
+2. Drag `ZCRemote.app` into **Applications** (the name does not clash with the official ZCode.app, so both can coexist)
 3. Gatekeeper will block the first launch because the app is not notarized by Apple. Either:
-   - run `xattr -cr "/Applications/ZCode Remote.app"` in Terminal, then open it normally, or
+   - run `xattr -cr "/Applications/ZCRemote.app"` in Terminal, then open it normally, or
    - after the first blocked attempt, go to **System Settings → Privacy & Security** and click **Open Anyway**
 4. Requires macOS 13 or newer; universal binary (Apple silicon and Intel)
 
@@ -47,8 +47,8 @@ The APK is self-signed by the developer (not distributed through an app store). 
 
 1. **On the controlled computer**: run the ZCode desktop app and click the phone icon in the bottom-left corner. A QR code and a link appear.
 2. **Connect**
-   - Android: open ZCode Remote and tap **Scan to connect** (or copy the link and use **Paste link**)
-   - macOS: open ZCode Remote, choose **Connection → Add connection…** (⌘N) and paste the link
+   - Android: open ZCRemote and tap **Scan to connect** (or copy the link and use **Paste link**)
+   - macOS: open ZCRemote, choose **Connection → Add connection…** (⌘N) and paste the link
 3. **Sign in**: the first time you will see a sign-in page. Pick **the same provider and account as the controlled computer** (Z.ai or BigModel). This is required by the official remote-control page; the session is remembered afterwards.
 4. From then on you can browse tasks and send instructions as if you were at the desk. Once the app goes to the background you'll be notified when there is a result or a decision waiting for you.
 
@@ -59,7 +59,7 @@ Several computers: generate a link on each machine and add them all. Connections
 
 ## How notifications are decided
 
-While the agent is working, the remote page shows "thinking…" / "working for N s"; when it stops, that turns into "worked for N min N s". ZCode Remote injects a small, generic observer script into the page:
+While the agent is working, the remote page shows "thinking…" / "working for N s"; when it stops, that turns into "worked for N min N s". ZCRemote injects a small, generic observer script into the page:
 
 - "working" disappears and "worked for" appears → the turn is over → notify immediately
 - newly added content contains approval wording ("waiting for your confirmation", "allow once", "always allow", …) → high-priority notification

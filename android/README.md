@@ -1,4 +1,4 @@
-# ZCode Remote for Android
+# ZCRemote for Android
 
 ZCode「手机远程控制」页面的安卓原生壳。ZCode 官方没有原生手机 App，远程控制是通过手机
 浏览器打开桌面端生成的链接（走官方中继，外网可用）。本工程把那个页面包成原生 App，

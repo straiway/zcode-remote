@@ -1,11 +1,11 @@
 #!/bin/zsh
-# 构建 ZCode Remote（macOS 遥控壳）：swift build → 组装 .app → ad-hoc 签名 → 打 zip
+# 构建 ZCRemote（macOS 遥控壳）：swift build → 组装 .app → ad-hoc 签名 → 打 zip
 # 应用名刻意与官方 ZCode.app 区分，避免安装到同一台机器时冲突
 # 产物统一输出到 build/bin/
 set -e
 cd "$(dirname "$0")"
 VERSION="1.0.1"
-APP_NAME="ZCode Remote"
+APP_NAME="ZCRemote"
 
 mkdir -p build/bin
 
@@ -41,7 +41,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
 PLIST
 
 codesign --force -s - "$APP"
-ZIP="build/bin/ZCode-Remote-macOS-${VERSION}.zip"
+ZIP="build/bin/ZCRemote-macOS-${VERSION}.zip"
 rm -f "$ZIP"
 ditto -c -k --keepParent "$APP" "$ZIP"
 echo "done: $APP + $ZIP"

@@ -1,7 +1,7 @@
-# ZCode Remote for macOS
+# ZCRemote for macOS
 
 ZCode「手机远程控制」页面的 macOS 原生壳，用于**在一台电脑上遥控另一台电脑的 ZCode**。
-应用名刻意与官方 `ZCode.app` 区分（`ZCode Remote.app`），可与官方桌面端装在同一台机器上。
+应用名刻意与官方 `ZCode.app` 区分（`ZCRemote.app`），可与官方桌面端装在同一台机器上。
 与安卓版（[`../android`](../android)）功能对齐，逻辑同源。安装与使用说明见仓库根目录 [README](../README.md)。
 
 ## 功能
@@ -21,7 +21,7 @@ ZCode「手机远程控制」页面的 macOS 原生壳，用于**在一台电脑
 ./build-app.sh
 ```
 
-产物：`build/bin/ZCode Remote.app` 与 `build/bin/ZCode-Remote-macOS-<version>.zip`（通用二进制，
+产物：`build/bin/ZCRemote.app` 与 `build/bin/ZCRemote-macOS-<version>.zip`（通用二进制，
 Apple 芯片 / Intel 均可）。需要 Xcode（Swift 5.9+）与 Python 3 + Pillow（生成图标）。
 
 ## 安装到另一台 Mac
@@ -29,7 +29,7 @@ Apple 芯片 / Intel 均可）。需要 Xcode（Swift 5.9+）与 Python 3 + Pill
 解压后拖到「应用程序」。因为是本地 ad-hoc 签名、未经 Apple 公证，首次打开会被 Gatekeeper
 拦截，任选其一：
 
-- 终端执行 `xattr -cr "/Applications/ZCode Remote.app"` 去掉隔离标记后正常双击
+- 终端执行 `xattr -cr "/Applications/ZCRemote.app"` 去掉隔离标记后正常双击
 - 或双击被拦后到「系统设置 → 隐私与安全性」底部点「仍要打开」
 
 ## 目录
