@@ -28,7 +28,7 @@ ZCRemote 把这个页面包成原生客户端，补上这些体验：
 
 ### Android
 
-1. 下载 `zcode-remote-android-x.y.z.apk`
+1. 下载 `ZCRemote-android-x.y.z.apk`
 2. 用手机浏览器打开或传到手机后安装，安装时允许「未知来源应用」
 3. 要求 Android 8.0 及以上
 

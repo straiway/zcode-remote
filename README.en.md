@@ -28,7 +28,7 @@ Grab the latest build from [Releases](https://github.com/straiway/zcode-remote/r
 
 ### Android
 
-1. Download `zcode-remote-android-x.y.z.apk`
+1. Download `ZCRemote-android-x.y.z.apk`
 2. Open it on the phone (or transfer it over) and install; allow "unknown sources" when prompted
 3. Requires Android 8.0 or newer
 
