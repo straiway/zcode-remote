@@ -1,6 +1,7 @@
 package dev.straiway.zcodeshell
 
 import android.annotation.SuppressLint
+import android.app.Activity
 import android.app.AlertDialog
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -29,6 +30,7 @@ import android.webkit.WebChromeClient
 import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
+import android.webkit.ValueCallback
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.Button
@@ -116,6 +118,16 @@ class MainActivity : AppCompatActivity() {
 
     private val notifPermissionLauncher =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { }
+
+    // 页面里的 <input type="file">（附件上传）：WebView 必须由壳实现
+    // onShowFileChooser 才能弹系统选择器，否则点了没反应
+    private var filePickerCallback: ValueCallback<Array<Uri>>? = null
+    private val filePickerLauncher =
+        registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+            val callback = filePickerCallback
+            filePickerCallback = null
+            callback?.onReceiveValue(parseFileChooserResult(result.resultCode, result.data))
+        }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         // 个别 ROM 上 DayNight 跟随系统可能失效，显式声明一次
@@ -328,6 +340,26 @@ class MainActivity : AppCompatActivity() {
                 val url = pendingUrl ?: return
                 if (ConnectionStore.autoRename(this@MainActivity, url, cleaned)) {
                     refreshConnectionUi(url)
+                }
+            }
+
+            override fun onShowFileChooser(
+                webView: WebView,
+                filePathCallback: ValueCallback<Array<Uri>>,
+                fileChooserParams: WebChromeClient.FileChooserParams,
+            ): Boolean {
+                // 上一次选择还没回来（如连续点了两次附件）时先取消旧回调，
+                // 保证每个 valueCallback 恰好被调用一次，否则页面会卡在等待态
+                filePickerCallback?.onReceiveValue(null)
+                filePickerCallback = filePathCallback
+                return try {
+                    filePickerLauncher.launch(fileChooserParams.createIntent())
+                    true
+                } catch (e: ActivityNotFoundException) {
+                    // 设备上没有能处理该类型的应用，视为放弃选择
+                    filePickerCallback = null
+                    filePathCallback.onReceiveValue(null)
+                    false
                 }
             }
 
@@ -627,6 +659,25 @@ class MainActivity : AppCompatActivity() {
         if (!candidate.startsWith("http://") && !candidate.startsWith("https://")) return null
         val host = Uri.parse(candidate).host ?: return null
         return if (host.isBlank()) null else candidate
+    }
+
+    /**
+     * 解析文件选择器的返回值。
+     *
+     * 不能直接用 FileChooserParams.parseResult：部分 WebView 版本的实现只读
+     * Intent.data，而 Android 13+ 的系统照片选择器把 URI 放在 ClipData 里
+     * （模拟器实测 parseResult 恒为 null，页面永远收不到文件）。这里两种形态
+     * 都解析，全部失败时返回 null（等于放弃选择）。
+     */
+    private fun parseFileChooserResult(resultCode: Int, data: Intent?): Array<Uri>? {
+        if (resultCode != Activity.RESULT_OK || data == null) return null
+        data.data?.let { return arrayOf(it) }
+        val clip = data.clipData ?: return null
+        val uris = ArrayList<Uri>(clip.itemCount)
+        for (i in 0 until clip.itemCount) {
+            clip.getItemAt(i).uri?.let { uris.add(it) }
+        }
+        return if (uris.isEmpty()) null else uris.toTypedArray()
     }
 
     private fun isSameHost(url: String): Boolean {
