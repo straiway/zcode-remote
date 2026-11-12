@@ -672,12 +672,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
     """#
 
     /// 一体化标题栏的页面侧配合（仅主窗口注入）：
-    /// - 顶带手势：顶带（BAND=48px）范围内、非交互元素的左键按下 → window_drag，
-    ///   400ms 内二次按下 → window_zoom（自行计时，原生拖拽会吞掉第二次点击）。
-    /// - 布局：预留条（h-12 [app-region:drag]，48px 空带）独占顶带承接交通灯
-    ///   （系统默认位置）；侧栏头部块（flex-col）加 .zcr-rows 改为单行横向
-    ///   布局，并把独立定位的箭头容器（[app-region:no-drag]）按几何特征
-    ///   匹配后 fixed 定位到该行行首——最终一行排开：箭头 | 选择器 | 新建任务。
+    /// - 顶带手势：顶带（BAND=64px，覆盖压缩后的顶带+头部行）范围内、
+    ///   非交互元素的左键按下 → window_drag，400ms 内二次按下 → window_zoom
+    ///   （自行计时，原生拖拽会吞掉第二次点击）。
+    /// - 布局：预留条（h-12 [app-region:drag]）从 48px 压缩到 26px，只承接
+    ///   交通灯（系统默认位置，y6..22）；侧栏头部块（flex-col）加 .zcr-rows
+    ///   改为单行横向布局并上移贴紧灯，独立定位的箭头容器
+    ///   （[app-region:no-drag]）按几何特征匹配后 fixed 定位到该行行首——
+    ///   最终一行排开：箭头 | 选择器 | 新建任务。
     /// - 兜底：页面改版导致预留条消失时加 zcr-fallback 类给 body 顶部留白，
     ///   保证交通灯永不遮挡可点内容；头部链路定位失败则保持页面自然布局。
     /// 注意：手势只依赖几何位置与常见交互语义（closest 表），不依赖页面 DOM 结构；
@@ -687,14 +689,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
       if (window.__zcrChrome) return;
       if (!window.webkit || !window.webkit.messageHandlers || !window.webkit.messageHandlers.shellBridge) return;
       window.__zcrChrome = true;
-      var BAND = 48;
+      var BAND = 64;
       var INTERACTIVE = 'a,button,input,textarea,select,label,summary,[role="button"],[role="tab"],[role="menuitem"],[contenteditable]';
       var style = document.createElement('style');
       style.id = 'zcr-mac-chrome';
       style.textContent =
         'html.zcr-fallback body { padding-top: 24px; }' +
         '.zcr-rows { display: flex !important; flex-direction: row !important; flex-wrap: wrap !important;' +
-        '  align-items: center !important; gap: 6px !important; padding: 6px 8px 8px !important; }' +
+        '  align-items: center !important; gap: 6px !important; padding: 2px 8px 8px !important; }' +
         '.zcr-rows > * { width: auto !important; flex: 0 0 auto !important; }' +
         '.zcr-rows > :first-child { flex: 1 1 0 !important; min-width: 0 !important; }' +
         '.zcr-rows.zcr-has-arrows > :first-child { margin-left: 68px !important; }';
@@ -722,6 +724,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
       function mergeHeader() {
         var strip = document.querySelector('[class*="app-region:drag"]');
         if (!strip) return;
+        // 预留条压缩到 26px：只承接交通灯（y6..22），头部行上移贴紧灯，
+        // 消除原 48px 布局下灯与头部行之间约 32px 的空隙
+        strip.style.height = '26px';
+        strip.style.minHeight = '0px';
         var scroller = strip.nextElementSibling;
         var holder = scroller ? scroller.firstElementChild : null;
         var header = holder ? holder.firstElementChild : null;
@@ -738,7 +744,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
         if (arrows) {
           arrows.style.position = 'fixed';
           arrows.style.left = '8px';
-          arrows.style.top = '56px';
+          arrows.style.top = '30px';
           arrows.style.zIndex = '30';
         }
         header.classList.toggle('zcr-has-arrows', !!arrows);
