@@ -4,7 +4,7 @@
 # 产物统一输出到 build/bin/
 set -e
 cd "$(dirname "$0")"
-VERSION="1.0.2"
+VERSION="1.1.0"
 APP_NAME="ZCRemote"
 
 mkdir -p build/bin
