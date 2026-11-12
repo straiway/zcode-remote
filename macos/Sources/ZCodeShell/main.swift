@@ -29,17 +29,22 @@ enum ConnectionStore {
     static let defaultsKey = "connections.fallback"
 
     static func list() -> [SavedConnection] {
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service,
-            kSecAttrAccount as String: account,
-            kSecReturnData as String: true,
-        ]
-        var item: CFTypeRef?
-        if SecItemCopyMatching(query as CFDictionary, &item) == errSecSuccess,
-           let data = item as? Data,
-           let conns = try? JSONDecoder().decode([SavedConnection].self, from: data) {
-            return conns.sorted { $0.savedAt > $1.savedAt }
+        // ZCR_DEV_STORE=1（dev 调试）时完全绕开 Keychain：dev 二进制没有
+        // release 应用的钥匙串授权，读写都会触发系统授权弹窗并阻塞主线程
+        let useKeychain = ProcessInfo.processInfo.environment["ZCR_DEV_STORE"] != "1"
+        if useKeychain {
+            let query: [String: Any] = [
+                kSecClass as String: kSecClassGenericPassword,
+                kSecAttrService as String: service,
+                kSecAttrAccount as String: account,
+                kSecReturnData as String: true,
+            ]
+            var item: CFTypeRef?
+            if SecItemCopyMatching(query as CFDictionary, &item) == errSecSuccess,
+               let data = item as? Data,
+               let conns = try? JSONDecoder().decode([SavedConnection].self, from: data) {
+                return conns.sorted { $0.savedAt > $1.savedAt }
+            }
         }
         // Keychain 异常（权限/迁移等）时退回应用私有偏好
         if let data = UserDefaults.standard.data(forKey: defaultsKey),
@@ -51,16 +56,18 @@ enum ConnectionStore {
 
     static func persist(_ conns: [SavedConnection]) {
         guard let data = try? JSONEncoder().encode(conns) else { return }
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service,
-            kSecAttrAccount as String: account,
-        ]
-        let update: [String: Any] = [kSecValueData as String: data]
-        if SecItemUpdate(query as CFDictionary, update as CFDictionary) == errSecItemNotFound {
-            var add = query
-            add[kSecValueData as String] = data
-            SecItemAdd(add as CFDictionary, nil)
+        if ProcessInfo.processInfo.environment["ZCR_DEV_STORE"] != "1" {
+            let query: [String: Any] = [
+                kSecClass as String: kSecClassGenericPassword,
+                kSecAttrService as String: service,
+                kSecAttrAccount as String: account,
+            ]
+            let update: [String: Any] = [kSecValueData as String: data]
+            if SecItemUpdate(query as CFDictionary, update as CFDictionary) == errSecItemNotFound {
+                var add = query
+                add[kSecValueData as String] = data
+                SecItemAdd(add as CFDictionary, nil)
+            }
         }
         UserDefaults.standard.set(data, forKey: defaultsKey)
     }
@@ -146,6 +153,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
 
     func applicationDidBecomeActive(_ notification: Notification) {
         // 回到前台说明用户已看到内容，清掉积压的通知和未聚合内容
+        guard Self.notificationsAvailable else { return }
         quietTimer?.invalidate()
         pendingBuffer = ""
         pendingWait = false
@@ -159,20 +167,51 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
         let config = WKWebViewConfiguration()
         config.userContentController.addUserScript(
             WKUserScript(source: Self.watcherJS, injectionTime: .atDocumentEnd, forMainFrameOnly: true))
+        config.userContentController.addUserScript(
+            WKUserScript(source: Self.chromeJS, injectionTime: .atDocumentEnd, forMainFrameOnly: true))
+        // 排查远程页 DOM 用：ZCR_DEBUG_DOM=1 时周期性采样顶带元素并经 shellBridge 回传 NSLog
+        if ProcessInfo.processInfo.environment["ZCR_DEBUG_DOM"] != nil {
+            config.userContentController.addUserScript(
+                WKUserScript(source: Self.debugDOMJS, injectionTime: .atDocumentEnd, forMainFrameOnly: true))
+        }
         config.userContentController.add(self, name: "shellBridge")
 
         let web = WKWebView(frame: .zero, configuration: config)
         web.navigationDelegate = self
         web.uiDelegate = self
+        // 排查远程页 DOM 用：ZCR_WEBINSPECTOR=1 时可在 Safari「开发」菜单检查页面
+        if ProcessInfo.processInfo.environment["ZCR_WEBINSPECTOR"] != nil,
+           #available(macOS 13.3, *) {
+            web.isInspectable = true
+        }
+        // 一体化标题栏（对齐官方桌面端观感）：网页顶栏直接充当窗口顶带，
+        // 系统标题栏透明化并隐藏居中标题，交通灯悬浮在页面左上角的预留条内。
+        // chromeJS 负责顶带拖拽手势与预留条消失时的兜底。
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 1100, height: 760),
-            styleMask: [.titled, .closable, .miniaturizable, .resizable],
+            styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
             backing: .buffered, defer: false)
         window.title = "ZCRemote"
+        window.titlebarAppearsTransparent = true
+        window.titleVisibility = .hidden
+        // 窄窗口（<md 断点 768px）页面切移动布局，顶栏融合链路失效，
+        // 最小宽度保证融合布局始终成立
+        window.minSize = NSSize(width: 860, height: 480)
         window.contentView = web
         window.center()
         window.makeKeyAndOrderFront(nil)
         window.setFrameAutosaveName("ZCodeShellMainWindow")
+        // dev 调试用：ZCR_WINDOW_FRAME="x,y,w,h"（Cocoa 坐标）强制窗口框架，
+        // 用于自动化验证时把窗口固定在主屏指定位置
+        if let spec = ProcessInfo.processInfo.environment["ZCR_WINDOW_FRAME"], !spec.isEmpty {
+            let parts = spec.split(separator: ",")
+                .compactMap { Double($0.trimmingCharacters(in: .whitespaces)) }
+            if parts.count == 4 {
+                window.setFrame(
+                    NSRect(x: parts[0], y: parts[1], width: parts[2], height: parts[3]),
+                    display: true)
+            }
+        }
 
         self.window = window
         webView = web
@@ -304,6 +343,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
     }
 
     private func requestNotificationPermissionIfNeeded() {
+        guard Self.notificationsAvailable else { return }
         guard !permissionAsked else { return }
         permissionAsked = true
         UNUserNotificationCenter.current()
@@ -378,6 +418,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
         }
     }
 
+    // MARK: 网页文件选择（<input type="file">、拖拽附件等）
+    // 不实现这个 delegate 方法 WebKit 会静默取消，点上传毫无反应；
+    // 与安卓壳的 onShowFileChooser 对应
+
+    func webView(_ webView: WKWebView, runOpenPanelWith parameters: WKOpenPanelParameters,
+                 initiatedByFrame frame: WKFrameInfo,
+                 completionHandler: @escaping ([URL]?) -> Void) {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = parameters.allowsDirectories
+        panel.allowsMultipleSelection = parameters.allowsMultipleSelection
+        panel.resolvesAliases = true
+        if panel.runModal() == .alertFirstButtonReturn {
+            completionHandler(panel.urls)
+        } else {
+            completionHandler(nil)
+        }
+    }
+
     // MARK: 下载支持（下载链接多为脚本 window.open 打开，走上面的弹窗路径；
     // 不实现 WKDownloadDelegate 的话 WebKit 会直接吞掉下载，只剩白窗口）
 
@@ -444,6 +503,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
         guard message.name == "shellBridge",
               let body = message.body as? [String: Any],
               let type = body["type"] as? String else { return }
+        // 窗口手势（chromeJS 注入的顶带）：拖动窗口 / 双击缩放
+        if type == "window_drag" { beginWindowDrag(); return }
+        if type == "window_zoom" { window?.performZoom(nil); return }
+        // DOM 排查采样（ZCR_DEBUG_DOM=1 时注入）
+        if type == "page_debug" {
+            NSLog("ZCRDOM: %@", body["text"] as? String ?? "")
+            return
+        }
         handlePageEvent(type: type, snippet: body["text"] as? String ?? "")
     }
 
@@ -473,6 +540,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
     }
 
     private func flushPendingNotification() {
+        guard Self.notificationsAvailable else { return }
         let text = pendingBuffer
         let waiting = pendingWait
         let done = pendingDone
@@ -508,6 +576,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
 
     // MARK: 工具
 
+    /// chromeJS 顶带拖拽：在当前鼠标位置发起系统级窗口拖动。
+    /// performDrag 需要一个鼠标事件作为锚点，合成一个左键按下事件即可。
+    private func beginWindowDrag() {
+        guard let window else { return }
+        let event = NSEvent.mouseEvent(
+            with: .leftMouseDown, location: NSEvent.mouseLocation,
+            modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+            windowNumber: window.windowNumber, context: nil,
+            eventNumber: 0, clickCount: 1, pressure: 1.0)
+        if let event { window.performDrag(with: event) }
+    }
+
     private func isSameHost(_ url: URL) -> Bool {
         guard let current = pendingUrl, let currentHost = URL(string: current)?.host else { return true }
         return url.host == currentHost
@@ -527,6 +607,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
 
     private static let quietInterval: TimeInterval = 12
     private static let postDoneGrace: TimeInterval = 20
+
+    /// UNUserNotificationCenter 只能从带 bundle id 的 .app 进程调用，
+    /// 裸 swift run 二进制会直接 NSAssertion 崩溃，这里统一守卫
+    private static var notificationsAvailable: Bool {
+        Bundle.main.bundleIdentifier != nil
+    }
 
     /// 通用页面变化观察器（与安卓壳同源）：
     /// - task_done：「工作中/正在思考」消失且出现「已工作 …」→ 一轮结束
@@ -582,6 +668,172 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
         if (!isDone && !text) return;
         window.webkit.messageHandlers.shellBridge.postMessage({type: type, text: text.substring(0, 140)});
       }).observe(document.body, {childList: true, subtree: true, characterData: true});
+    })();
+    """#
+
+    /// 一体化标题栏的页面侧配合（仅主窗口注入）：
+    /// - 顶带手势：顶带（BAND=48px）范围内、非交互元素的左键按下 → window_drag，
+    ///   400ms 内二次按下 → window_zoom（自行计时，原生拖拽会吞掉第二次点击）。
+    /// - 布局：预留条（h-12 [app-region:drag]，48px 空带）独占顶带承接交通灯
+    ///   （系统默认位置）；侧栏头部块（flex-col）加 .zcr-rows 改为单行横向
+    ///   布局，并把独立定位的箭头容器（[app-region:no-drag]）按几何特征
+    ///   匹配后 fixed 定位到该行行首——最终一行排开：箭头 | 选择器 | 新建任务。
+    /// - 兜底：页面改版导致预留条消失时加 zcr-fallback 类给 body 顶部留白，
+    ///   保证交通灯永不遮挡可点内容；头部链路定位失败则保持页面自然布局。
+    /// 注意：手势只依赖几何位置与常见交互语义（closest 表），不依赖页面 DOM 结构；
+    /// 头部定位链路（预留条 → 滚动容器 → 头部块）经 ZCR_DEBUG_DOM 采样确认。
+    static let chromeJS = #"""
+    (function(){
+      if (window.__zcrChrome) return;
+      if (!window.webkit || !window.webkit.messageHandlers || !window.webkit.messageHandlers.shellBridge) return;
+      window.__zcrChrome = true;
+      var BAND = 48;
+      var INTERACTIVE = 'a,button,input,textarea,select,label,summary,[role="button"],[role="tab"],[role="menuitem"],[contenteditable]';
+      var style = document.createElement('style');
+      style.id = 'zcr-mac-chrome';
+      style.textContent =
+        'html.zcr-fallback body { padding-top: 24px; }' +
+        '.zcr-rows { display: flex !important; flex-direction: row !important; flex-wrap: wrap !important;' +
+        '  align-items: center !important; gap: 6px !important; padding: 6px 8px 8px !important; }' +
+        '.zcr-rows > * { width: auto !important; flex: 0 0 auto !important; }' +
+        '.zcr-rows > :first-child { flex: 1 1 0 !important; min-width: 0 !important; }' +
+        '.zcr-rows.zcr-has-arrows > :first-child { margin-left: 68px !important; }';
+      (document.head || document.documentElement).appendChild(style);
+      function isInteractive(el) {
+        return !!(el && el.closest && el.closest(INTERACTIVE));
+      }
+      function send(type) {
+        window.webkit.messageHandlers.shellBridge.postMessage({type: type});
+      }
+      var lastDownAt = 0, lastDownX = 0, lastDownY = 0;
+      document.addEventListener('mousedown', function(e){
+        if (e.button !== 0 || e.clientY > BAND || isInteractive(e.target)) return;
+        var now = Date.now();
+        var isDouble = now - lastDownAt < 400 &&
+          Math.abs(e.clientX - lastDownX) < 6 && Math.abs(e.clientY - lastDownY) < 6;
+        lastDownAt = now; lastDownX = e.clientX; lastDownY = e.clientY;
+        send(isDouble ? 'window_zoom' : 'window_drag');
+      }, true);
+      // 头部块定位：预留条 → 下一兄弟（滚动容器）→ 首子节点 → 首子节点（头部块）。
+      // 箭头容器（[app-region:no-drag]，约 64x28，独立绝对定位在顶带内，与
+      // 预留条无 DOM 父子关系）按几何特征从全文档匹配后 position:fixed 挪到
+      // 头部行行首，与选择器/新建任务同一行（周期性重施对抗软导航重置；
+      // 只改样式不移动节点，对页面框架安全）。
+      function mergeHeader() {
+        var strip = document.querySelector('[class*="app-region:drag"]');
+        if (!strip) return;
+        var scroller = strip.nextElementSibling;
+        var holder = scroller ? scroller.firstElementChild : null;
+        var header = holder ? holder.firstElementChild : null;
+        if (!scroller || !holder || !header) return;
+        if (String(header.className).indexOf('flex-col') < 0) return;
+        header.classList.add('zcr-rows');
+        var arrows = null;
+        var cands = document.querySelectorAll('[class*="app-region:no-drag"]');
+        for (var i = 0; i < cands.length; i++) {
+          var r = cands[i].getBoundingClientRect();
+          if (r.width > 30 && r.width < 120 && r.height > 20 && r.height < 40 &&
+              r.left < 120 && r.top < 60) { arrows = cands[i]; break; }
+        }
+        if (arrows) {
+          arrows.style.position = 'fixed';
+          arrows.style.left = '8px';
+          arrows.style.top = '56px';
+          arrows.style.zIndex = '30';
+        }
+        header.classList.toggle('zcr-has-arrows', !!arrows);
+      }
+      function adapt() {
+        var strip = document.querySelector('[class*="app-region:drag"]');
+        document.documentElement.classList.toggle('zcr-fallback', !strip);
+        mergeHeader();
+      }
+      setInterval(adapt, 1500);
+    })();
+    """#
+
+    /// DOM 排查采样（ZCR_DEBUG_DOM=1 时注入）：dump 侧栏头部子树的结构
+    /// （tag.class + rect），用于确定一体化顶栏融合 CSS 的选择器。
+    /// 经 shellBridge → NSLog(ZCRDOM:) 输出，仅实现期使用。
+    static let debugDOMJS = #"""
+    (function(){
+      if (!window.webkit || !window.webkit.messageHandlers || !window.webkit.messageHandlers.shellBridge) return;
+      function send(s) {
+        window.webkit.messageHandlers.shellBridge.postMessage({type: 'page_debug', text: s});
+      }
+      function dump(n) {
+        try {
+          var lines = ['round=' + n];
+          // 页面可能有多个 aside，取第一个可见的
+          var asides = document.querySelectorAll('aside');
+          var aside = null;
+          for (var a = 0; a < asides.length; a++) {
+            var ar = asides[a].getBoundingClientRect();
+            lines.push('ASIDE[' + a + '] ' + String(asides[a].className || '').slice(0, 80) +
+              ' [' + Math.round(ar.left) + ',' + Math.round(ar.top) + ',' +
+              Math.round(ar.width) + ',' + Math.round(ar.height) + ']');
+            if (!aside && ar.width > 50 && ar.height > 100) aside = asides[a];
+          }
+          function walk(el, depth) {
+            if (depth > 6 || lines.length > 90) return;
+            var r = el.getBoundingClientRect();
+            if (r.width === 0 && r.height === 0) return;
+            var pad = '';
+            for (var k = 0; k < depth; k++) pad += '· ';
+            lines.push(pad + el.tagName + '.' + String(el.className || '').slice(0, 110) +
+              ' [' + Math.round(r.left) + ',' + Math.round(r.top) + ',' +
+              Math.round(r.width) + ',' + Math.round(r.height) + ']' +
+              (el.tagName === 'BUTTON' ? ' txt=' + (el.textContent || '').trim().slice(0, 14) : ''));
+            var kids = el.children;
+            for (var i = 0; i < kids.length && i < 12; i++) walk(kids[i], depth + 1);
+          }
+          if (aside) walk(aside, 0);
+          // 预留条及其父节点的直接子元素（确定头部行的位置和选择器）
+          var strip = document.querySelector('[class*="app-region:drag"]');
+          if (strip && strip.parentElement) {
+            lines.push('STRIP-PARENT ' + String(strip.parentElement.className || '').slice(0, 100));
+            var sib = strip.parentElement.children;
+            for (var s = 0; s < sib.length && s < 8; s++) {
+              var sr = sib[s].getBoundingClientRect();
+              lines.push('SIB[' + s + '] ' + sib[s].tagName + '.' + String(sib[s].className || '').slice(0, 100) +
+                ' [' + Math.round(sr.left) + ',' + Math.round(sr.top) + ',' +
+                Math.round(sr.width) + ',' + Math.round(sr.height) + ']');
+            }
+          } else if (!aside) {
+            // 没侧栏也没预留条：报告页面状态（登录页/接管页等）
+            lines.push('STATE title=' + document.title +
+              ' body1=' + String((document.body.children[0] || {}).className || '').slice(0, 90));
+          }
+          // 箭头区命中测试：顶带下方左侧（页面坐标）的元素链 + 箭头容器计算样式
+          lines.push('ARROW-MARK enter');
+          var noDrags = document.querySelectorAll('[class*="app-region:no-drag"]');
+          for (var si = 0; si < noDrags.length && si < 5; si++) {
+            var st = noDrags[si];
+            var sr2 = st.getBoundingClientRect();
+            var pa = st.parentElement;
+            lines.push('NODRAG[' + si + '] [' + Math.round(sr2.left) + ',' + Math.round(sr2.top) + ',' +
+              Math.round(sr2.width) + ',' + Math.round(sr2.height) + '] ' +
+              String(st.className || '').slice(0, 70) +
+              ' parent=' + (pa ? pa.tagName + '.' + String(pa.className || '').slice(0, 80) : 'null'));
+          }
+          var pts = [[30, 27], [55, 27], [30, 60], [200, 77]];
+          for (var p = 0; p < pts.length; p++) {
+            var chain = document.elementsFromPoint(pts[p][0], pts[p][1]);
+            var desc = [];
+            for (var q = 0; q < Math.min(chain.length, 5); q++) {
+              var el = chain[q];
+              var r = el.getBoundingClientRect();
+              desc.push(el.tagName + '.' + String(el.className || '').slice(0, 80) +
+                '[' + Math.round(r.left) + ',' + Math.round(r.top) + ',' +
+                Math.round(r.width) + ',' + Math.round(r.height) + ']');
+            }
+            lines.push('PT' + pts[p].join(',') + ' ← ' + desc.join(' < '));
+          }
+          for (var i = 0; i < lines.length; i += 14) send(lines.slice(i, i + 14).join('\n'));
+        } catch (err) { send('round-err ' + err); }
+      }
+      var c = 0;
+      var timer = setInterval(function(){ c++; dump(c); if (c >= 8) clearInterval(timer); }, 1000);
     })();
     """#
 }
