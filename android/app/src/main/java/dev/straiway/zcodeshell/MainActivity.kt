@@ -3,12 +3,14 @@ package dev.straiway.zcodeshell
 import android.annotation.SuppressLint
 import android.app.Activity
 import android.app.AlertDialog
+import android.app.DownloadManager
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.ClipboardManager
+import android.content.ContentValues
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
@@ -17,19 +19,25 @@ import android.net.NetworkCapabilities
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.Environment
 import android.os.Handler
 import android.os.Looper
 import android.os.Message
 import android.os.SystemClock
+import android.provider.MediaStore
 import android.text.format.DateUtils
+import android.util.Base64
 import android.view.MotionEvent
 import android.view.View
 import android.view.ViewConfiguration
+import android.webkit.CookieManager
 import android.webkit.JavascriptInterface
+import android.webkit.MimeTypeMap
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
+import android.webkit.URLUtil
 import android.webkit.ValueCallback
 import android.webkit.WebView
 import android.webkit.WebViewClient
@@ -51,7 +59,10 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.isVisible
 import com.journeyapps.barcodescanner.ScanContract
 import com.journeyapps.barcodescanner.ScanOptions
+import java.io.File
+import java.net.URLDecoder
 import kotlin.math.abs
+import org.json.JSONObject
 
 /**
  * ZCode 远程控制的 WebView 壳。
@@ -298,6 +309,7 @@ class MainActivity : AppCompatActivity() {
                 }
                 if (url != null && view != null && isSameHost(url)) {
                     view.evaluateJavascript(WATCHER_JS, null)
+                    view.evaluateJavascript(DOWNLOAD_HOOK_JS, null)
                 }
             }
 
@@ -396,6 +408,12 @@ class MainActivity : AppCompatActivity() {
                 resultMsg.sendToTarget()
                 return true
             }
+        }
+
+        // 页面发起的下载（聊天图片等）：不设置 DownloadListener 时 WebView
+        // 会静默丢弃请求，页面还提示「下载已开始」，实际什么都没发生
+        webView.setDownloadListener { url, userAgent, contentDisposition, mimeType, _ ->
+            startDownload(url, userAgent, contentDisposition, mimeType)
         }
     }
 
@@ -542,13 +560,208 @@ class MainActivity : AppCompatActivity() {
             .show()
     }
 
+    // ---- 文件下载 ----
+
+    /**
+     * WebView 下载事件分派。页面点下载按钮通常是 JS 创建 <a download> 再
+     * click，WebView 只回调 DownloadListener、自己不落盘；其中 blob:/data:
+     * 协议系统下载器也不认识（blob 只能在创建它的页面源里读出来），须先经
+     * JS 桥把数据取回原生侧再保存。
+     *
+     * 文件名优先取 DOWNLOAD_HOOK_JS 记下的 download 属性值——WebView 对
+     * blob:/data: 不回传 contentDisposition，guessFileName 会从 URL 里
+     * 抠出 uuid / base64 片段当名字（真机实测）。
+     */
+    private fun startDownload(
+        url: String,
+        userAgent: String?,
+        contentDisposition: String?,
+        mimeType: String?,
+    ) {
+        webView.evaluateJavascript(
+            "(function(n){ return n ? n.get(${JSONObject.quote(url)}) : '' })(window.__zcrDlNames)"
+        ) { value ->
+            if (isFinishing || isDestroyed) return@evaluateJavascript
+            val hinted = value?.trim('"')?.takeIf { it.isNotBlank() }
+            val base = when {
+                !hinted.isNullOrBlank() -> hinted
+                // blob:/data: 的 URL 里没有可用的名字，别让 guessFileName 抠垃圾
+                url.startsWith("data:") || url.startsWith("blob:") -> "download"
+                else -> URLUtil.guessFileName(url, contentDisposition, mimeType)
+            }
+            val fileName = sanitizeFileName(base)
+            when {
+                url.startsWith("data:") -> saveDataUrl(fileName, url)
+                url.startsWith("blob:") -> fetchBlobViaPage(fileName, url)
+                url.startsWith("http") -> enqueueSystemDownload(fileName, url, userAgent, mimeType)
+                else -> toastDownloadResult(fileName, savedTo = null, viaSystem = false)
+            }
+        }
+    }
+
+    /** 在页面上下文里把 blob 读成 base64 data URL，经 onDownloadData 送回原生侧。 */
+    private fun fetchBlobViaPage(fileName: String, url: String) {
+        val js = """
+            (function(){
+              function back(d){ AndroidBridge.onDownloadData(${JSONObject.quote(fileName)}, d || ''); }
+              try {
+                var x = new XMLHttpRequest();
+                x.open('GET', ${JSONObject.quote(url)}, true);
+                x.responseType = 'blob';
+                x.onload = function(){
+                  var r = new FileReader();
+                  r.onloadend = function(){ back(r.result); };
+                  r.onerror = function(){ back(''); };
+                  r.readAsDataURL(x.response);
+                };
+                x.onerror = function(){ back(''); };
+                x.send();
+              } catch (e) { back(''); }
+            })();
+        """.trimIndent()
+        webView.evaluateJavascript(js, null)
+    }
+
+    /** JS 桥回传的下载数据（dataUrl 为空表示失败）；文件名来自页面，先净化。 */
+    private fun handleDownloadData(rawName: String, dataUrl: String) {
+        val fileName = sanitizeFileName(rawName)
+        if (dataUrl.startsWith("data:")) saveDataUrl(fileName, dataUrl)
+        else toastDownloadResult(fileName, savedTo = null, viaSystem = false)
+    }
+
+    /** 解析 data:[<mime>][;base64],<payload> 并落盘。 */
+    private fun saveDataUrl(fileName: String, url: String) {
+        val comma = url.indexOf(',')
+        val meta = if (comma > 5) url.substring(5, comma) else null
+        val payload = if (comma >= 0) url.substring(comma + 1) else null
+        val bytes = payload?.let {
+            try {
+                if (meta != null && meta.endsWith(";base64")) {
+                    Base64.decode(it, Base64.DEFAULT)
+                } else {
+                    URLDecoder.decode(it, "UTF-8").toByteArray()
+                }
+            } catch (e: IllegalArgumentException) {
+                null
+            }
+        }
+        val mime = meta?.substringBefore(';')?.ifBlank { null }
+        if (bytes == null || bytes.isEmpty()) {
+            toastDownloadResult(fileName, savedTo = null, viaSystem = false)
+            return
+        }
+        saveBytes(fixExtension(fileName, mime), mime, bytes)
+    }
+
+    private fun saveBytes(fileName: String, mimeType: String?, bytes: ByteArray) {
+        val savedTo = if (Build.VERSION.SDK_INT >= 29) {
+            insertIntoDownloads(fileName, mimeType, bytes)
+        } else {
+            // 26–28 没有存储权限写不进公共目录（媒体库写入同样要权限），
+            // 降级到 App 专属目录，Toast 里给完整路径
+            writeToAppDir(fileName, bytes)
+        }
+        toastDownloadResult(fileName, savedTo, viaSystem = false)
+    }
+
+    /** API 29+：经 MediaStore 写入公共「下载」目录，免存储权限。 */
+    private fun insertIntoDownloads(fileName: String, mimeType: String?, bytes: ByteArray): String? {
+        return try {
+            val values = ContentValues().apply {
+                put(MediaStore.Downloads.DISPLAY_NAME, fileName)
+                put(MediaStore.Downloads.MIME_TYPE, mimeType ?: "application/octet-stream")
+                put(MediaStore.Downloads.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS)
+            }
+            val uri = contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
+                ?: return null
+            contentResolver.openOutputStream(uri)?.use { it.write(bytes) } ?: return null
+            "${Environment.DIRECTORY_DOWNLOADS}/$fileName"
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    private fun writeToAppDir(fileName: String, bytes: ByteArray): String? {
+        return try {
+            val dir = getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS) ?: filesDir
+            val file = File(dir, fileName)
+            file.outputStream().use { it.write(bytes) }
+            file.absolutePath
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    /** 直链下载交系统 DownloadManager，附会话 Cookie 与页面 UA（图片直链可能要登录态）。 */
+    private fun enqueueSystemDownload(
+        fileName: String,
+        url: String,
+        userAgent: String?,
+        mimeType: String?,
+    ) {
+        try {
+            val request = DownloadManager.Request(Uri.parse(url))
+                .setTitle(fileName)
+                .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
+            if (Build.VERSION.SDK_INT >= 29) {
+                request.setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, fileName)
+            } else {
+                request.setDestinationInExternalFilesDir(this, Environment.DIRECTORY_DOWNLOADS, fileName)
+            }
+            if (!mimeType.isNullOrBlank()) request.setMimeType(mimeType)
+            userAgent?.let { request.addRequestHeader("User-Agent", it) }
+            CookieManager.getInstance().getCookie(url)?.let { request.addRequestHeader("Cookie", it) }
+            (getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager).enqueue(request)
+            toastDownloadResult(fileName, savedTo = null, viaSystem = true)
+        } catch (e: Exception) {
+            toastDownloadResult(fileName, savedTo = null, viaSystem = false)
+        }
+    }
+
+    private fun toastDownloadResult(fileName: String, savedTo: String?, viaSystem: Boolean) {
+        val (text, length) = when {
+            viaSystem -> getString(R.string.download_via_system) to Toast.LENGTH_SHORT
+            savedTo != null -> getString(R.string.download_saved, savedTo) to Toast.LENGTH_SHORT
+            else -> getString(R.string.download_failed, fileName) to Toast.LENGTH_LONG
+        }
+        Toast.makeText(this, text, length).show()
+    }
+
+    /** 文件名可能来自页面内容，剥掉路径成分与控制字符再限长，防路径注入。 */
+    private fun sanitizeFileName(raw: String): String {
+        val name = raw.substringAfterLast('/').substringAfterLast('\\')
+            .replace(Regex("\\p{Cntrl}"), "")
+            .trim()
+        return name.ifEmpty { "download" }.take(120)
+    }
+
+    /** blob:/data: 下载回调给的 mime 常是 octet-stream，拿到真实 mime 后纠正扩展名。 */
+    private fun fixExtension(fileName: String, mimeType: String?): String {
+        val ext = mimeType?.let { MimeTypeMap.getSingleton().getExtensionFromMimeType(it) }
+            ?: return fileName
+        val dot = fileName.lastIndexOf('.')
+        return when (if (dot >= 0) fileName.substring(dot + 1).lowercase() else "") {
+            "", "bin", "octet-stream" ->
+                (if (dot > 0) fileName.substring(0, dot) else fileName) + "." + ext
+            else -> fileName
+        }
+    }
+
     // ---- 消息通知 ----
 
-    /** 注入给页面的 JS 桥：后台收到页面内容变化时发系统通知。 */
+    /** 注入给页面的 JS 桥：后台收到页面内容变化时发系统通知；回传 blob 下载的数据。 */
     private inner class PageBridge {
         @JavascriptInterface
         fun onEvent(type: String, snippet: String) {
             runOnUiThread { handlePageEvent(type, snippet) }
+        }
+
+        @JavascriptInterface
+        fun onDownloadData(fileName: String, dataUrl: String) {
+            runOnUiThread {
+                if (isFinishing || isDestroyed) return@runOnUiThread
+                handleDownloadData(fileName, dataUrl)
+            }
         }
     }
 
@@ -818,6 +1031,31 @@ class MainActivity : AppCompatActivity() {
                 if (!isDone && !text) return;
                 AndroidBridge.onEvent(type, text.substring(0, 140));
               }).observe(document.body, {childList: true, subtree: true, characterData: true});
+            })();
+        """.trimIndent()
+
+        /**
+         * 下载文件名钩子：捕获阶段记下带 download 属性的 <a> 的
+         * href → download 名映射，供 DownloadListener 回调时查取
+         * （WebView 对 blob:/data: 不回传 contentDisposition）。
+         * JS 动态创建的 a.click() 同样会触发 click 事件，先于
+         * DownloadListener 回调，时序安全。
+         */
+        private val DOWNLOAD_HOOK_JS = """
+            (function(){
+              if (window.__zcrDlHook) return;
+              window.__zcrDlHook = true;
+              window.__zcrDlNames = new Map();
+              document.addEventListener('click', function(e){
+                var a = e.target && e.target.closest ? e.target.closest('a[download]') : null;
+                if (!a) return;
+                var href = a.href || '';
+                var name = a.getAttribute('download') || '';
+                if (href && name) {
+                  if (window.__zcrDlNames.size > 40) window.__zcrDlNames.clear();
+                  window.__zcrDlNames.set(href, name);
+                }
+              }, true);
             })();
         """.trimIndent()
     }

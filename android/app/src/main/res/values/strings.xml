@@ -31,4 +31,7 @@
     <string name="notif_done_title">ZCode 任务已完成</string>
     <string name="notif_wait_title">ZCode 等待你的确认</string>
     <string name="notif_fallback">点击返回会话</string>
+    <string name="download_saved">已保存到「%1$s」</string>
+    <string name="download_via_system">已加入系统下载，进度见通知栏</string>
+    <string name="download_failed">下载失败：%1$s</string>
 </resources>
