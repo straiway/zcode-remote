@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
 
     <uses-permission android:name="android.permission.INTERNET" />
     <!-- 错误页判断断网/在线用；缺失时 showError 一路崩溃（模拟器实测） -->
@@ -18,6 +19,14 @@
         android:label="@string/app_name"
         android:supportsRtl="true"
         android:theme="@style/Theme.ZCodeShell">
+
+        <!-- 扫码库的 CaptureActivity 在其 manifest 里锁了 sensorLandscape，
+             手机竖持扫码必然横屏很怪；覆盖为竖屏（CaptureManager 的
+             lockOrientation 只锁启动时的当前方向，会顺着锁成竖屏） -->
+        <activity
+            android:name="com.journeyapps.barcodescanner.CaptureActivity"
+            android:screenOrientation="portrait"
+            tools:replace="android:screenOrientation" />
 
         <!-- 旋转等配置变化不重建，避免 WebView 重新加载 -->
         <activity

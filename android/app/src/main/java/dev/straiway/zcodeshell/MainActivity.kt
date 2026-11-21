@@ -317,14 +317,15 @@ class MainActivity : AppCompatActivity() {
                 view: WebView,
                 request: WebResourceRequest,
             ): Boolean {
-                // 一切顶层导航都留在 WebView 内。登录流程（location.assign
-                // 跳转 OAuth 授权页）必须与发起页共享 sessionStorage（CSRF
-                // nonce 所在），拆到任何其他浏览上下文都会校验失败；而
-                // hasGesture 无法区分「点登录按钮」和「点消息链接」（点击后
-                // JS 发起的导航同样带手势标记），登录页也可能内嵌在会话
-                // 路由上（path 判据不可靠）。消息里的链接几乎都是
-                // target="_blank" / window.open，由 onCreateWindow 的弹窗
-                // 路径交给系统浏览器，这里无需再外跳
+                // 一切顶层导航都留在 WebView 内。登录流程必须与发起页共享
+                // sessionStorage（CSRF nonce 所在），拆到任何其他浏览上下文
+                // 都会校验失败（Web 端早期用 location.assign 顶层跳转，现已
+                // 改为 window.open 弹窗，由 onCreateWindow 按登录域名转回
+                // 主 WebView）；而 hasGesture 无法区分「点登录按钮」和「点
+                // 消息链接」（点击后 JS 发起的导航同样带手势标记），登录页
+                // 也可能内嵌在会话路由上（path 判据不可靠）。消息里的链接
+                // 几乎都是 target="_blank" / window.open，由 onCreateWindow
+                // 的弹窗路径交给系统浏览器，这里无需再外跳
                 return false
             }
 
@@ -387,8 +388,15 @@ class MainActivity : AppCompatActivity() {
             ): Boolean {
                 // 新窗口请求（target="_blank" / window.open）：借一个临时
                 // WebView 接住目标 URL 后处置——
-                // - 用户手势弹窗（消息里的 _blank 链接、页面 openExternal）：
-                //   交系统浏览器，避免把会话页顶掉；
+                // - 登录链路弹窗：Web 端 startLogin 已改用 window.open 发起
+                //   OAuth（2026-11-21 从生产 bundle 逆向，此前是
+                //   location.assign 顶层导航），必须回主 WebView 与发起页
+                //   共享 sessionStorage（CSRF nonce），拆到系统浏览器必然
+                //   拿不到登录态；
+                // - 弹窗内的重定向跳转：弹窗页从未真正渲染过，重定向只可能
+                //   是登录链中途的 30x，一并留主 WebView；
+                // - 其余用户手势弹窗（消息里的 _blank 链接）：交系统浏览器，
+                //   避免把会话页顶掉；
                 // - 非手势弹窗（页面自身的 window.open）：加载进主 WebView，
                 //   保持同一浏览上下文（sessionStorage 里的状态不丢）
                 val transport = resultMsg.obj as WebView.WebViewTransport
@@ -400,7 +408,12 @@ class MainActivity : AppCompatActivity() {
                     ): Boolean {
                         val url = request.url.toString()
                         popupView.post { popupView.destroy() }
-                        if (isUserGesture) openExternally(url) else webView.loadUrl(url)
+                        when {
+                            isLoginFlowUrl(url) -> webView.loadUrl(url)
+                            request.isRedirect -> webView.loadUrl(url)
+                            isUserGesture -> openExternally(url)
+                            else -> webView.loadUrl(url)
+                        }
                         return true
                     }
                 }
@@ -900,6 +913,27 @@ class MainActivity : AppCompatActivity() {
             clip.getItemAt(i).uri?.let { uris.add(it) }
         }
         return if (uris.isEmpty()) null else uris.toTypedArray()
+    }
+
+    /**
+     * 登录链路 URL 判据：这些弹窗目标必须留在主 WebView 里完成，登录态
+     * （sessionStorage 的 OAuth nonce、Cookie）才能回到发起页。域名按
+     * bundle 里的 authorize/callback 构造函数整理：
+     * - chat.z.ai / account.z.ai / passport.z.ai：zai 登录（含
+     *   /api/oauth/authorize 授权入口）
+     * - open.bigmodel.cn / bigmodel.cn：bigmodel 登录
+     * - zcode.z.ai/web-remote*：登录页与 OAuth 回调路由
+     */
+    private fun isLoginFlowUrl(url: String): Boolean {
+        val host = Uri.parse(url).host ?: return false
+        val path = Uri.parse(url).path ?: ""
+        return when (host) {
+            "chat.z.ai", "account.z.ai", "passport.z.ai",
+            "open.bigmodel.cn", "bigmodel.cn",
+            -> true
+            "zcode.z.ai" -> path.startsWith("/web-remote")
+            else -> false
+        }
     }
 
     private fun isSameHost(url: String): Boolean {
