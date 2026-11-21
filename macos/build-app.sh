@@ -4,7 +4,7 @@
 # 产物统一输出到 build/bin/
 set -e
 cd "$(dirname "$0")"
-VERSION="1.1.2"
+VERSION="1.1.3"
 APP_NAME="ZCRemote"
 
 mkdir -p build/bin
@@ -30,7 +30,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
     <key>CFBundleName</key><string>${APP_NAME}</string>
     <key>CFBundleDisplayName</key><string>${APP_NAME}</string>
     <key>CFBundleShortVersionString</key><string>${VERSION}</string>
-    <key>CFBundleVersion</key><string>12</string>
+    <key>CFBundleVersion</key><string>13</string>
     <key>CFBundlePackageType</key><string>APPL</string>
     <key>CFBundleIconFile</key><string>AppIcon</string>
     <key>LSMinimumSystemVersion</key><string>13.0</string>
